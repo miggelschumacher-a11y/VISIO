@@ -55,8 +55,18 @@ namespace VISIO_Import
         INIFile fIniFile;
         string fVisioOrdner;
         string fConnectionStr;
+        SqlConnection fConn;
+        SqlTransaction fTran;
         Dictionary<string, string> fSpalten = new Dictionary<string, string>();
         List<string> fSpaltenNamen = new List<string>();
+
+        const string cStudy_level_1 = "Study level 1";
+        const string cStudy_level_2 = "Study level 2";
+        const string cStudy_level_3 = "Study level 3";
+        const string cName = "Name";
+        const string cImage = "Image";
+        const string cLayerData = "LayerData";
+        const string cStarchPrz = "Starch %";
 
         enum TFeldKategorie {
             Normal,
@@ -100,15 +110,13 @@ namespace VISIO_Import
         private string LadeVISIO_ImportOrdner()
         {
             SqlCommand mCmd = new SqlCommand();
-            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
-            {
-                mConn.Open();
-                mCmd.Connection = mConn;
-                mCmd.CommandText = "SELECT VisioOrdner from Konfig";
-                SqlDataReader mReader = mCmd.ExecuteReader();
-                mReader.Read();
-                return mReader["VisioOrdner"].ToString();
-            }
+            mCmd.Connection = fConn;
+            mCmd.CommandText = "SELECT VisioOrdner from Konfig";
+            SqlDataReader mReader = mCmd.ExecuteReader();
+            mReader.Read();
+            var s = mReader["VisioOrdner"].ToString();
+            mReader.Close();
+            return s;
         }
 
         Boolean FindFeldname(string aFeldName, string aSection)
@@ -190,34 +198,31 @@ namespace VISIO_Import
             return true;
         }
 
-        int IU_VisioImport(DateTime aImportiertWann, string aImportiertAus, string aStudylevel1, string aStudylevel2, string aStudylevel3, string aName, string aImagePath, string aLayerDataPath, Double aStarchPrz, string aPI, int  aID = 0)
+        int IU_VisioImport(DateTime aImportiertWann, string aImportiertAus, string aStudylevel1, string aStudylevel2, string aStudylevel3, string aName, string aImagePath, string aLayerDataPath, Double aStarchPrz, string aPI, int aID = 0)
         {
             if (aStarchPrz > 999)
                 throw new Exception("Starch % darf nicht größer 999 sein!");
 
             SqlCommand mCmd = new SqlCommand();
-            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
-            {
-                mConn.Open();
-                mCmd.Connection = mConn;
-                mCmd.CommandType = CommandType.StoredProcedure;
-                mCmd.CommandText = "DoVisioImport"; 
-                mCmd.Parameters.AddWithValue("@ID", aID);
-                mCmd.Parameters.AddWithValue("@ImportiertWann", aImportiertWann);
-                mCmd.Parameters.AddWithValue("@ImportiertAus", aImportiertAus);
-                mCmd.Parameters.AddWithValue("@Studylevel1", aStudylevel1);
-                mCmd.Parameters.AddWithValue("@Studylevel2", aStudylevel2);
-                mCmd.Parameters.AddWithValue("@Studylevel3", aStudylevel3);
-                mCmd.Parameters.AddWithValue("@Name", aName);
-                mCmd.Parameters.AddWithValue("@ImagePath", aImagePath);
-                mCmd.Parameters.AddWithValue("@LayerDataPath", aLayerDataPath);
-                mCmd.Parameters.AddWithValue("@PI", aPI);
-                mCmd.Parameters.AddWithValue("@StarchPrz", aStarchPrz);
-                var mReturnParameter = mCmd.Parameters.Add("@ReturnID", SqlDbType.Int);
-                mReturnParameter.Direction = ParameterDirection.Output;
-                mCmd.ExecuteNonQuery();
-                return (int)mReturnParameter.Value;
-            }
+            mCmd.Connection = fConn;
+            mCmd.Transaction = fTran;
+            mCmd.CommandType = CommandType.StoredProcedure;
+            mCmd.CommandText = "DoVisioImport";
+            mCmd.Parameters.AddWithValue("@ID", aID);
+            mCmd.Parameters.AddWithValue("@ImportiertWann", aImportiertWann);
+            mCmd.Parameters.AddWithValue("@ImportiertAus", aImportiertAus);
+            mCmd.Parameters.AddWithValue("@Studylevel1", aStudylevel1);
+            mCmd.Parameters.AddWithValue("@Studylevel2", aStudylevel2);
+            mCmd.Parameters.AddWithValue("@Studylevel3", aStudylevel3);
+            mCmd.Parameters.AddWithValue("@Name", aName);
+            mCmd.Parameters.AddWithValue("@ImagePath", aImagePath);
+            mCmd.Parameters.AddWithValue("@LayerDataPath", aLayerDataPath);
+            mCmd.Parameters.AddWithValue("@PI", aPI);
+            mCmd.Parameters.AddWithValue("@StarchPrz", aStarchPrz);
+            var mReturnParameter = mCmd.Parameters.Add("@ReturnID", SqlDbType.Int);
+            mReturnParameter.Direction = ParameterDirection.Output;
+            mCmd.ExecuteNonQuery();
+            return (int)mReturnParameter.Value;
         }
 
         int IU_VisioImportPolle(int aVisioImportID,
@@ -227,93 +232,91 @@ namespace VISIO_Import
                                 int aID = 0)
         {
             SqlCommand mCmd = new SqlCommand();
-            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
-            {
-                mConn.Open();
-                mCmd.Connection = mConn;
-                mCmd.CommandType = CommandType.StoredProcedure;
-                mCmd.CommandText = "IU_VisioImportPolle";
-                mCmd.Parameters.AddWithValue("@ID", aID);
-                mCmd.Parameters.AddWithValue("@FK_VisioImport", aVisioImportID);
-                mCmd.Parameters.AddWithValue("@VisioName", aVisioName);
-                mCmd.Parameters.AddWithValue("@Anzahl", aAnzahl);
-                mCmd.Parameters.AddWithValue("@Kategorie_01", (int)aKategorie);
-                var mReturnParameter = mCmd.Parameters.Add("@ReturnID", SqlDbType.Int);
-                mReturnParameter.Direction = ParameterDirection.Output;
-                mCmd.ExecuteNonQuery();
-                return (int)mReturnParameter.Value;
-            }
+            mCmd.Connection = fConn;
+            mCmd.Transaction = fTran;
+            mCmd.CommandType = CommandType.StoredProcedure;
+            mCmd.CommandText = "IU_VisioImportPolle";
+            mCmd.Parameters.AddWithValue("@ID", aID);
+            mCmd.Parameters.AddWithValue("@FK_VisioImport", aVisioImportID);
+            mCmd.Parameters.AddWithValue("@VisioName", aVisioName);
+            mCmd.Parameters.AddWithValue("@Anzahl", aAnzahl);
+            mCmd.Parameters.AddWithValue("@Kategorie_01", (int)aKategorie);
+            var mReturnParameter = mCmd.Parameters.Add("@ReturnID", SqlDbType.Int);
+            mReturnParameter.Direction = ParameterDirection.Output;
+            mCmd.ExecuteNonQuery();
+            return (int)mReturnParameter.Value;
         }
 
         void DoImport()
         {
             ReadConfigFiles("SQLSRV", ref fConnectionStr);
-            fVisioOrdner = LadeVISIO_ImportOrdner();
             List<string> mDatenZeile = new List<string>();
             fIniFile = new INIFile(@".\VISIO.ini");
-            foreach (string fVisioDatenDatei in Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly))
+            using (fConn = new SqlConnection(fConnectionStr))
             {
-                string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
-                string mPiStr = mNurDateiName.Substring(0,10);
-                int mID = 0;
-                int mVisioImportID = 0;
-                using (var mReader = new StreamReader(fVisioDatenDatei)) {
-                    var mValues = GetValues(mReader);
-                    // In der ersten Zeile sind die Spaltennamen
-                    foreach (var mSpalte in mValues)
+                fConn.Open();
+                fVisioOrdner = LadeVISIO_ImportOrdner();
+                foreach (string fVisioDatenDatei in Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly))
+                {
+                    string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
+                    string mPiStr = mNurDateiName.Substring(0, 10);
+                    int mVisioImportID = 0;
+                    using (var mReader = new StreamReader(fVisioDatenDatei))
                     {
-                        fSpaltenNamen.Add(mSpalte);
-                        fSpalten.Add(mSpalte, "");
-                    }
-
-                    // Datenzeile 
-                    mValues = GetValues(mReader);
-                    SetDictValue("Study level 1", mValues);
-                    SetDictValue("Study level 2", mValues);
-                    SetDictValue("Study level 3", mValues);
-                    SetDictValue("Name", mValues);
-                    SetDictValue("Image", mValues);
-                    SetDictValue("LayerData", mValues);
-                    SetDictValue("Starch %", mValues, true);
-                    Double mStarchPrz = 0;
-                    Double.TryParse(GetDictValue("Starch %"), out mStarchPrz);
-
-                    mID = IU_VisioImport(DateTime.Now,
-                                         mNurDateiName,
-                                         GetDictValue("Study level 1"),
-                                         GetDictValue("Study level 2"),
-                                         GetDictValue("Study level 3"),
-                                         GetDictValue("Name"),
-                                         GetDictValue("Image"),
-                                         GetDictValue("LayerData"),
-                                         mStarchPrz,
-                                         mPiStr);
-
-                    for (int i = 0; i < mValues.Count(); i++)
-                    {
-                        //mSpalten[]
-                        //mID:= IU_VisioImport(DateTime.Now,
-                        //                     Path.GetFileNameWithoutExtension(fVisioDatenDatei),
-                        //                     mValues[1].ToString(), // Study level 1
-
-                        //                               fVisioDateiDaten.GetValue('Study level 2', 1),
-                        //                               fVisioDateiDaten.GetValue('Study level 3', 1),
-                        //                               fVisioDateiDaten.GetValue('Name', 1),
-                        //                               fVisioDateiDaten.GetValue('Image', 1),
-                        //                               fVisioDateiDaten.GetValue('LayerData', 1),
-                        //                               Valr(fVisioDateiDaten.GetValue('starch %', 1)),
-                        //                               mPiStr
-                        //                               );
-                        TFeldKategorie mKategorie_01;
-                        int mAnzahl = 0;
-                        if ((Int32.TryParse(mValues[i], out mAnzahl)) && (mAnzahl > 0) && (FeldZulassen(fSpaltenNamen[i], out mKategorie_01)))
+                        fSpalten.Clear();
+                        var mValues = GetValues(mReader);
+                        // In der ersten Zeile sind die Spaltennamen
+                        foreach (var mSpalte in mValues)
                         {
-                            IU_VisioImportPolle(mVisioImportID,
-                                                fSpaltenNamen[i],
-                                                mAnzahl,
-                                                mKategorie_01);
-                        }//if  
-                    }//for
+                            fSpaltenNamen.Add(mSpalte);
+                            fSpalten.Add(mSpalte, "");
+                        }
+
+                        // In der zweiten Zeile sind die Daten
+                        mValues = GetValues(mReader);
+                        SetDictValue(cStudy_level_1, mValues);
+                        SetDictValue(cStudy_level_2, mValues);
+                        SetDictValue(cStudy_level_3, mValues);
+                        SetDictValue(cName, mValues);
+                        SetDictValue(cImage, mValues);
+                        SetDictValue(cLayerData, mValues);
+                        SetDictValue(cStarchPrz, mValues, true);
+                        Double mStarchPrz = 0;
+                        Double.TryParse(GetDictValue(cStarchPrz), out mStarchPrz);
+
+                        fTran = fConn.BeginTransaction();
+                        try
+                        {
+                            mVisioImportID = IU_VisioImport(DateTime.Now,
+                                                            mNurDateiName,
+                                                            GetDictValue(cStudy_level_1),
+                                                            GetDictValue(cStudy_level_2),
+                                                            GetDictValue(cStudy_level_3),
+                                                            GetDictValue(cName),
+                                                            GetDictValue(cImage),
+                                                            GetDictValue(cLayerData),
+                                                            mStarchPrz,
+                                                            mPiStr);
+
+                            for (int i = 0; i < mValues.Count(); i++)
+                            {
+                                TFeldKategorie mKategorie_01;
+                                int mAnzahl = 0;
+                                if ((Int32.TryParse(mValues[i], out mAnzahl)) && (mAnzahl > 0) && (FeldZulassen(fSpaltenNamen[i], out mKategorie_01)))
+                                {
+                                    IU_VisioImportPolle(mVisioImportID,
+                                                        fSpaltenNamen[i],
+                                                        mAnzahl,
+                                                        mKategorie_01);
+                                }//if  
+                            }//for
+                            fTran.Commit();
+                        }
+                        catch (Exception Ex)
+                        {
+                            fTran.Rollback();
+                        }
+                    }
                 }
             }
         }
