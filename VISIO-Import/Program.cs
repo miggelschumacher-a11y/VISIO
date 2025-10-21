@@ -8,6 +8,7 @@ using System.Xml.Serialization;
 using System.Data;
 using System.Data.SqlClient;
 using Nocksoft.IO.ConfigFiles;
+using System.Collections.Specialized;
 
 namespace VISIO_Import
 {
@@ -53,12 +54,14 @@ namespace VISIO_Import
     class Program
     {
         INIFile fIniFile;
+        string fProtokollDateiname = "";
         string fVisioOrdner;
         string fConnectionStr;
         SqlConnection fConn;
         SqlTransaction fTran;
-        Dictionary<string, string> fSpalten = new Dictionary<string, string>();
-        List<string> fSpaltenNamen = new List<string>();
+        readonly Dictionary<string, string> fSpalten = new Dictionary<string, string>();
+        readonly List<string> fSpaltenNamen = new List<string>();
+        readonly List<string> fProtokoll = new List<string>();
 
         const string cStudy_level_1 = "Study level 1";
         const string cStudy_level_2 = "Study level 2";
@@ -67,6 +70,7 @@ namespace VISIO_Import
         const string cImage = "Image";
         const string cLayerData = "LayerData";
         const string cStarchPrz = "Starch %";
+        const int cMaxProtkollDateien = 30;
 
         enum TFeldKategorie {
             Normal,
@@ -247,74 +251,131 @@ namespace VISIO_Import
             return (int)mReturnParameter.Value;
         }
 
+        public void SaveProtokoll()
+        {
+            List<string> mFileContent = new List<string>();
+            // Visio-Import_20102025      
+            File.AppendAllLines(fProtokollDateiname, fProtokoll);
+        }
+
         void DoImport()
         {
+            DateTime mHeute = DateTime.Today;
+            fProtokollDateiname = "Visio-Import-" + mHeute.Day.ToString() + mHeute.Month.ToString() + mHeute.Year.ToString();
             ReadConfigFiles("SQLSRV", ref fConnectionStr);
             List<string> mDatenZeile = new List<string>();
             fIniFile = new INIFile(@".\VISIO.ini");
-            using (fConn = new SqlConnection(fConnectionStr))
+            try
             {
-                fConn.Open();
-                fVisioOrdner = LadeVISIO_ImportOrdner();
-                foreach (string fVisioDatenDatei in Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly))
+                using (fConn = new SqlConnection(fConnectionStr))
                 {
-                    string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
-                    string mPiStr = mNurDateiName.Substring(0, 10);
-                    int mVisioImportID = 0;
-                    using (var mReader = new StreamReader(fVisioDatenDatei))
+                    string s = "";
+                    fConn.Open();
+                    fVisioOrdner = LadeVISIO_ImportOrdner();
+
+                    if (!Directory.Exists(fVisioOrdner))
                     {
-                        fSpalten.Clear();
-                        var mValues = GetValues(mReader);
-                        // In der ersten Zeile sind die Spaltennamen
-                        foreach (var mSpalte in mValues)
+                        if (fVisioOrdner.Trim() == "")
+                            s = "Visio-Ordner ist nicht gesetzt!";
+                        else
+                            s = String.Format("Visio-Ordner ({0}) für Importdaten nicht gefunden!", fVisioOrdner);
+
+                        fProtokoll.Add(s);
+                        return;
+                    }
+
+                    foreach (string fVisioDatenDatei in Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly))
+                    {
+                        string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
+                        string mPiStr = mNurDateiName.Substring(0, 10);
+                        int mVisioImportID = 0;
+                        using (var mReader = new StreamReader(fVisioDatenDatei))
                         {
-                            fSpaltenNamen.Add(mSpalte);
-                            fSpalten.Add(mSpalte, "");
-                        }
-
-                        // In der zweiten Zeile sind die Daten
-                        mValues = GetValues(mReader);
-                        SetDictValue(cStudy_level_1, mValues);
-                        SetDictValue(cStudy_level_2, mValues);
-                        SetDictValue(cStudy_level_3, mValues);
-                        SetDictValue(cName, mValues);
-                        SetDictValue(cImage, mValues);
-                        SetDictValue(cLayerData, mValues);
-                        SetDictValue(cStarchPrz, mValues, true);
-                        Double mStarchPrz = 0;
-                        Double.TryParse(GetDictValue(cStarchPrz), out mStarchPrz);
-
-                        fTran = fConn.BeginTransaction();
-                        try
-                        {
-                            mVisioImportID = IU_VisioImport(DateTime.Now,
-                                                            mNurDateiName,
-                                                            GetDictValue(cStudy_level_1),
-                                                            GetDictValue(cStudy_level_2),
-                                                            GetDictValue(cStudy_level_3),
-                                                            GetDictValue(cName),
-                                                            GetDictValue(cImage),
-                                                            GetDictValue(cLayerData),
-                                                            mStarchPrz,
-                                                            mPiStr);
-
-                            for (int i = 0; i < mValues.Count(); i++)
+                            fSpalten.Clear();
+                            var mValues = GetValues(mReader);
+                            // In der ersten Zeile sind die Spaltennamen
+                            foreach (var mSpalte in mValues)
                             {
-                                TFeldKategorie mKategorie_01;
-                                int mAnzahl = 0;
-                                if ((Int32.TryParse(mValues[i], out mAnzahl)) && (mAnzahl > 0) && (FeldZulassen(fSpaltenNamen[i], out mKategorie_01)))
+                                fSpaltenNamen.Add(mSpalte);
+                                fSpalten.Add(mSpalte, "");
+                            }
+
+                            // In der zweiten Zeile sind die Daten
+                            mValues = GetValues(mReader);
+                            SetDictValue(cStudy_level_1, mValues);
+                            SetDictValue(cStudy_level_2, mValues);
+                            SetDictValue(cStudy_level_3, mValues);
+                            SetDictValue(cName, mValues);
+                            SetDictValue(cImage, mValues);
+                            SetDictValue(cLayerData, mValues);
+                            SetDictValue(cStarchPrz, mValues, true);
+                            Double mStarchPrz = 0;
+                            Double.TryParse(GetDictValue(cStarchPrz), out mStarchPrz);
+
+                            fTran = fConn.BeginTransaction();
+                            try
+                            {
+                                mVisioImportID = IU_VisioImport(DateTime.Now,
+                                                                mNurDateiName,
+                                                                GetDictValue(cStudy_level_1),
+                                                                GetDictValue(cStudy_level_2),
+                                                                GetDictValue(cStudy_level_3),
+                                                                GetDictValue(cName),
+                                                                GetDictValue(cImage),
+                                                                GetDictValue(cLayerData),
+                                                                mStarchPrz,
+                                                                mPiStr);
+
+                                for (int i = 0; i < mValues.Count(); i++)
                                 {
-                                    IU_VisioImportPolle(mVisioImportID,
-                                                        fSpaltenNamen[i],
-                                                        mAnzahl,
-                                                        mKategorie_01);
-                                }//if  
-                            }//for
-                            fTran.Commit();
+                                    TFeldKategorie mKategorie_01;
+                                    int mAnzahl = 0;
+                                    if ((Int32.TryParse(mValues[i], out mAnzahl)) && (mAnzahl > 0) && (FeldZulassen(fSpaltenNamen[i], out mKategorie_01)))
+                                    {
+                                        IU_VisioImportPolle(mVisioImportID,
+                                                            fSpaltenNamen[i],
+                                                            mAnzahl,
+                                                            mKategorie_01);
+                                    }//if  
+                                }//for
+                                fTran.Commit();
+                                DateTime mZeitPunkt = DateTime.Now;
+                                fProtokoll.Add(mZeitPunkt.ToLongDateString() + " " + mZeitPunkt.ToLongTimeString());
+                                fProtokoll.Add(String.Format("PI{0}",mPiStr));
+                                fProtokoll.Add(String.Format("{0} importiert", mNurDateiName));
+                                fProtokoll.Add("");
+                            }
+                            catch (Exception Ex)
+                            {
+                                fTran.Rollback();
+                            }
                         }
-                        catch (Exception Ex)
+                    }
+                }
+            }
+            finally
+            {
+                if (fProtokoll.Count() > 0)
+                {
+                    string mProtokollDir = fVisioOrdner + "\\Protokoll\\";
+                    string s = mProtokollDir + fProtokollDateiname + ".prot";
+
+                    if (!File.Exists(s))
+                        File.Create(s).Close();
+
+                    File.AppendAllLines(s, fProtokoll);
+
+                    Dictionary<DateTime, string> mCreationDateList = Directory.EnumerateFiles(mProtokollDir, "*.prot", SearchOption.TopDirectoryOnly).ToDictionary(x => File.GetCreationTime(x), x => x);
+
+                    if (mCreationDateList.Count > cMaxProtkollDateien)
+                    {
+                        foreach (KeyValuePair<DateTime, string> mFile in mCreationDateList.OrderBy(x => x.Key))
                         {
-                            fTran.Rollback();
+                            File.Delete(mFile.Value);
+                            mCreationDateList.Remove(mFile.Key);
+
+                            if (mCreationDateList.Count <= cMaxProtkollDateien)
+                                break;
                         }
                     }
                 }
