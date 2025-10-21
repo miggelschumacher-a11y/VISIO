@@ -55,6 +55,8 @@ namespace VISIO_Import
         INIFile fIniFile;
         string fVisioOrdner;
         string fConnectionStr;
+        Dictionary<string, string> fSpalten = new Dictionary<string, string>();
+        List<string> fSpaltenNamen = new List<string>();
 
         enum TFeldKategorie {
             Normal,
@@ -64,6 +66,35 @@ namespace VISIO_Import
             AnzahlAllePollen,
             AnzahlNektarlose,
             Unbekannt
+        }
+
+        private string GetDictValue(string aKey)
+        {
+            if (fSpalten.ContainsKey(aKey))
+                return fSpalten[aKey];
+            return "";
+        }
+
+        private void SetDictValue(string aKey, string[] aValues, Boolean aIsFloatVal = false)
+        {
+            int mIndex = fSpaltenNamen.IndexOf(aKey);
+            if ((mIndex < 0) || (mIndex >= aValues.Count()))
+                return;
+
+            if (fSpalten.ContainsKey(aKey))
+            {
+                var s = aValues[mIndex];
+
+                if (aIsFloatVal)
+                    s = s.Replace('.', ',');
+                fSpalten[aKey] = s;
+            }
+        }
+               
+        private string[] GetValues(StreamReader aReader)
+        {
+            // Die Daten sind mit TAB getrennt.
+            return aReader.ReadLine().Split('\t');
         }
 
         private string LadeVISIO_ImportOrdner()
@@ -80,23 +111,138 @@ namespace VISIO_Import
             }
         }
 
-        Boolean FindFeldname(string aFeldName, string aSection){
-            return true;
+        Boolean FindFeldname(string aFeldName, string aSection)
+        {
+            Boolean mResult = false;
+            List<string> mSection = new List<string>();
+            mSection = fIniFile.GetSection(aSection);
+            for (int i = 1; i < mSection.Count(); i++)
+            {
+                string mSectionFeld = mSection[i];
+                string[] mSplit = mSectionFeld.Split('=');
+
+                if (mSplit.Count() == 0)
+                    return false;
+
+                mSectionFeld = mSplit[0];
+                // 05.12.2023
+                // Prüfen, ob es reicht, wenn der Feldname aus der Liste nur teilweise in dem zu prüfenden Text (aFeldname) vorhanden ist.
+                // Momentan ist das z.B. bei Feldnamen, die mit „Count of“ beginnen so.
+                // Deshalb gibt es einen Eintrag „Count of=1“ in der Visio.ini.
+                // Die „1“ bestimmt die Teil-Suche.
+
+                // Prüfe, ob aFeldName überhaupt im aktuellen SectionFeld vorkommt.
+                if (aFeldName.ToUpper().IndexOf(mSectionFeld.ToUpper(), StringComparison.CurrentCultureIgnoreCase) > -1)
+                {
+                    // aFeldName kommt im aktuellen Feld vor.
+                    // Prüfe, ob der Feldname in mHelpSectionList[i] mit aFeldName vollständig übereinstimmt.
+                    // oder, ob es reicht, wenn der Feldname in mHelpSectionList[i] nur zum Teil in aFeldName enthalten ist.
+                    if ((aFeldName.ToUpper() == mSectionFeld.ToUpper()) || (fIniFile.GetValue(aSection, mSectionFeld) == "1"))
+                        return true;
+                }
+            }
+            return mResult;
         }
 
         Boolean FeldZulassen(string aFeldName, out TFeldKategorie aKategorie_01)
         {
-            aKategorie_01 = TFeldKategorie.Unbekannt;
+            aKategorie_01 = TFeldKategorie.Normal;
+            if (!FindFeldname(aFeldName, "Relevante-Felder"))
+            {
+                // Das Feld ist nicht der Liste der relevanten Felder
+                if (!FindFeldname(aFeldName, "Nicht-Relevante-Felder"))
+                {
+                    // Das Feld ist auch nicht in der Liste der unrelevanten Felder
+                    // Das bedeutet, das Feld ist unbekannt und wahrscheinlich neu in die Importdatei aufgenommen worden.
+                    aKategorie_01 = TFeldKategorie.Unbekannt;
+                }
+                return false;
+            }
+
+            if (FindFeldname(aFeldName, "Struktur"))
+                // Wenn es ein Struktur-Feld ist, wird das Feld nicht zugelassen.
+                // Die Kategorie kann TPollenKategorie.Normal bleiben, da sie jetzt keine weitere Rolle spielt
+                return false;
+
+            if (FindFeldname(aFeldName, "Andere-Werte")) {
+                // Wenn es ein AndereWerte-Feld ist, wird das Feld zugelassen und die Kategorie wird auf TPollenKategorie.AndereWerte gesetzt.
+                aKategorie_01 = TFeldKategorie.AndereWerte;
+                return true;
+            }
+
+            if (FindFeldname(aFeldName, "Staerke")) {
+                // Wenn es ein Staerke-Feld ist, wird das Feld zugelassen und die Kategorie wird auf TPollenKategorie.Staerke gesetzt.
+                aKategorie_01 = TFeldKategorie.Staerke;
+                return true;
+            }
+
+            if (FindFeldname(aFeldName, "Anzahl-Alle-Pollen")) {
+                // Wenn es ein Anzahl-Alle-Pollen-Feld ist, wird das Feld zugelassen und die Kategorie wird auf TPollenKategorie.AnzahlAllePollen gesetzt.
+                aKategorie_01 = TFeldKategorie.AnzahlAllePollen;
+                return true;
+            }
+
+            if (FindFeldname(aFeldName, "Anzahl-Nektarlose")) {
+                // Wenn es ein Anzahl-Nektarlose-Feld ist, wird das Feld zugelassen und die Kategorie wird auf TPollenKategorie.AnzahlNektarlose gesetzt.
+                aKategorie_01 = TFeldKategorie.AnzahlNektarlose;
+                return true;
+            }
             return true;
+        }
+
+        int IU_VisioImport(DateTime aImportiertWann, string aImportiertAus, string aStudylevel1, string aStudylevel2, string aStudylevel3, string aName, string aImagePath, string aLayerDataPath, Double aStarchPrz, string aPI, int  aID = 0)
+        {
+            if (aStarchPrz > 999)
+                throw new Exception("Starch % darf nicht größer 999 sein!");
+
+            SqlCommand mCmd = new SqlCommand();
+            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
+            {
+                mConn.Open();
+                mCmd.Connection = mConn;
+                mCmd.CommandType = CommandType.StoredProcedure;
+                mCmd.CommandText = "DoVisioImport"; 
+                mCmd.Parameters.AddWithValue("@ID", aID);
+                mCmd.Parameters.AddWithValue("@ImportiertWann", aImportiertWann);
+                mCmd.Parameters.AddWithValue("@ImportiertAus", aImportiertAus);
+                mCmd.Parameters.AddWithValue("@Studylevel1", aStudylevel1);
+                mCmd.Parameters.AddWithValue("@Studylevel2", aStudylevel2);
+                mCmd.Parameters.AddWithValue("@Studylevel3", aStudylevel3);
+                mCmd.Parameters.AddWithValue("@Name", aName);
+                mCmd.Parameters.AddWithValue("@ImagePath", aImagePath);
+                mCmd.Parameters.AddWithValue("@LayerDataPath", aLayerDataPath);
+                mCmd.Parameters.AddWithValue("@PI", aPI);
+                mCmd.Parameters.AddWithValue("@StarchPrz", aStarchPrz);
+                var mReturnParameter = mCmd.Parameters.Add("@ReturnID", SqlDbType.Int);
+                mReturnParameter.Direction = ParameterDirection.Output;
+                mCmd.ExecuteNonQuery();
+                return (int)mReturnParameter.Value;
+            }
         }
 
         int IU_VisioImportPolle(int aVisioImportID,
                                 string aVisioName,
                                 double aAnzahl,
-                                int aKategorie,
+                                TFeldKategorie aKategorie,
                                 int aID = 0)
         {
-            return 0;
+            SqlCommand mCmd = new SqlCommand();
+            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
+            {
+                mConn.Open();
+                mCmd.Connection = mConn;
+                mCmd.CommandType = CommandType.StoredProcedure;
+                mCmd.CommandText = "IU_VisioImportPolle";
+                mCmd.Parameters.AddWithValue("@ID", aID);
+                mCmd.Parameters.AddWithValue("@FK_VisioImport", aVisioImportID);
+                mCmd.Parameters.AddWithValue("@VisioName", aVisioName);
+                mCmd.Parameters.AddWithValue("@Anzahl", aAnzahl);
+                mCmd.Parameters.AddWithValue("@Kategorie_01", (int)aKategorie);
+                var mReturnParameter = mCmd.Parameters.Add("@ReturnID", SqlDbType.Int);
+                mReturnParameter.Direction = ParameterDirection.Output;
+                mCmd.ExecuteNonQuery();
+                return (int)mReturnParameter.Value;
+            }
         }
 
         void DoImport()
@@ -107,46 +253,68 @@ namespace VISIO_Import
             fIniFile = new INIFile(@".\VISIO.ini");
             foreach (string fVisioDatenDatei in Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly))
             {
-                int mZeileNr = -1;
+                string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
+                string mPiStr = mNurDateiName.Substring(0,10);
+                int mID = 0;
                 int mVisioImportID = 0;
-                
-                List<string> mSpaltenNamen = new List<string>();
                 using (var mReader = new StreamReader(fVisioDatenDatei)) {
-                    while (!mReader.EndOfStream)
+                    var mValues = GetValues(mReader);
+                    // In der ersten Zeile sind die Spaltennamen
+                    foreach (var mSpalte in mValues)
                     {
-                        mZeileNr++;
-                        // In der ersten Zeile sind die Spaltennamen
-                        // Die Daten sind mit TAB getrennt.
-                        var mValues = mReader.ReadLine().Split('\t');
-
-                        if (mZeileNr == 0)
-                        {
-                            foreach (var mSpalte in mValues)
-                                mSpaltenNamen.Add(mSpalte);
-                            continue;
-                        }
-
-                        for (int i = 0; i < mValues.Count(); i++)
-                        {
-                            TFeldKategorie mKategorie_01;
-                            int mAnzahl = 0;
-                            if ((Int32.TryParse(mValues[i], out mAnzahl)) && (mAnzahl > 0) && (FeldZulassen(mSpaltenNamen[i], out mKategorie_01)))
-                            {
-                                IU_VisioImportPolle(mVisioImportID,
-                                                    mSpaltenNamen[i],
-                                                    mAnzahl,
-                                                    (int)mKategorie_01
-                                                   );
-                            }//if  
-                        }//for
+                        fSpaltenNamen.Add(mSpalte);
+                        fSpalten.Add(mSpalte, "");
                     }
-                    
-                }
-                    //string s = fVisioDatenDatei.R.GetValue(fVisioDatenDatei.Fieldnames[j], 1));
-                //string s = Trim(fVisioDateiDaten.GetValue(fVisioDateiDaten.Fieldnames[j], 1));
-                //mAnzahl:= 0;
-                //TryStrToFloat(s, mAnzahl);
 
+                    // Datenzeile 
+                    mValues = GetValues(mReader);
+                    SetDictValue("Study level 1", mValues);
+                    SetDictValue("Study level 2", mValues);
+                    SetDictValue("Study level 3", mValues);
+                    SetDictValue("Name", mValues);
+                    SetDictValue("Image", mValues);
+                    SetDictValue("LayerData", mValues);
+                    SetDictValue("Starch %", mValues, true);
+                    Double mStarchPrz = 0;
+                    Double.TryParse(GetDictValue("Starch %"), out mStarchPrz);
+
+                    mID = IU_VisioImport(DateTime.Now,
+                                         mNurDateiName,
+                                         GetDictValue("Study level 1"),
+                                         GetDictValue("Study level 2"),
+                                         GetDictValue("Study level 3"),
+                                         GetDictValue("Name"),
+                                         GetDictValue("Image"),
+                                         GetDictValue("LayerData"),
+                                         mStarchPrz,
+                                         mPiStr);
+
+                    for (int i = 0; i < mValues.Count(); i++)
+                    {
+                        //mSpalten[]
+                        //mID:= IU_VisioImport(DateTime.Now,
+                        //                     Path.GetFileNameWithoutExtension(fVisioDatenDatei),
+                        //                     mValues[1].ToString(), // Study level 1
+
+                        //                               fVisioDateiDaten.GetValue('Study level 2', 1),
+                        //                               fVisioDateiDaten.GetValue('Study level 3', 1),
+                        //                               fVisioDateiDaten.GetValue('Name', 1),
+                        //                               fVisioDateiDaten.GetValue('Image', 1),
+                        //                               fVisioDateiDaten.GetValue('LayerData', 1),
+                        //                               Valr(fVisioDateiDaten.GetValue('starch %', 1)),
+                        //                               mPiStr
+                        //                               );
+                        TFeldKategorie mKategorie_01;
+                        int mAnzahl = 0;
+                        if ((Int32.TryParse(mValues[i], out mAnzahl)) && (mAnzahl > 0) && (FeldZulassen(fSpaltenNamen[i], out mKategorie_01)))
+                        {
+                            IU_VisioImportPolle(mVisioImportID,
+                                                fSpaltenNamen[i],
+                                                mAnzahl,
+                                                mKategorie_01);
+                        }//if  
+                    }//for
+                }
             }
         }
 

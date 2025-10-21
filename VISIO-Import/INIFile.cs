@@ -67,15 +67,17 @@ namespace Nocksoft.IO.ConfigFiles
 
             foreach (var item in fileArray)
             {
-                if (item.Length <= 0) continue;
+                var mItem = item.Trim();
+
+                if (mItem.Length <= 0) continue;
 
                 // Beginning of section.
-                if (item.Replace(" ", "").ToLower() == section)
+                if (mItem.Replace(" ", "").ToLower() == section)
                 {
                     sectionStart = true;
                 }
                 // Beginning of next section.
-                if (sectionStart == true && item.Replace(" ", "").ToLower() != section && item.Replace(" ", "").Substring(0, 1) == "[" && item.Replace(" ", "").Substring(item.Length - 1, 1) == "]")
+                if (sectionStart == true && mItem.Replace(" ", "").ToLower() != section && mItem.Replace(" ", "").Substring(0, 1) == "[" && mItem.Replace(" ", "").Substring(mItem.Length - 1, 1) == "]")
                 {
                     break;
                 }
@@ -83,13 +85,13 @@ namespace Nocksoft.IO.ConfigFiles
                 {
                     // Add the entry to the List<string> completeSection, if it is not a comment or an empty entry.
                     if (includeComments == false
-                        && item.Replace(" ", "").Substring(0, 1) != ";" && !string.IsNullOrWhiteSpace(item))
+                        && mItem.Replace(" ", "").Substring(0, 1) != ";" && !string.IsNullOrWhiteSpace(mItem))
                     {
-                        completeSection.Add(ReplaceSpacesAtStartAndEnd(item));
+                        completeSection.Add(ReplaceSpacesAtStartAndEnd(mItem));
                     }
-                    if (includeComments == true && !string.IsNullOrWhiteSpace(item))
+                    if (includeComments == true && !string.IsNullOrWhiteSpace(mItem))
                     {
-                        completeSection.Add(ReplaceSpacesAtStartAndEnd(item));
+                        completeSection.Add(ReplaceSpacesAtStartAndEnd(mItem));
                     }
                 }
             }
