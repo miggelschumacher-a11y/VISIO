@@ -582,6 +582,7 @@ namespace VISIO_Import
                         }
                     }
                 }
+                // Importierte Datei löschen
                 foreach (var mFile in mImportedFiles)
                 {
                     try
