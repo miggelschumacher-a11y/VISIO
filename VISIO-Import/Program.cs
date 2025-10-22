@@ -62,6 +62,7 @@ namespace VISIO_Import
         readonly Dictionary<string, string> fSpalten = new Dictionary<string, string>();
         readonly List<string> fSpaltenNamen = new List<string>();
         readonly List<string> fProtokoll = new List<string>();
+        readonly List<string> fFehler = new List<string>();
 
         const string cStudy_level_1 = "Study level 1";
         const string cStudy_level_2 = "Study level 2";
@@ -80,6 +81,12 @@ namespace VISIO_Import
             AnzahlAllePollen,
             AnzahlNektarlose,
             Unbekannt
+        }
+
+        public class Analyse
+        {
+            public int Nummer;
+            public string Name;
         }
 
         private string GetDictValue(string aKey)
@@ -115,12 +122,128 @@ namespace VISIO_Import
         {
             SqlCommand mCmd = new SqlCommand();
             mCmd.Connection = fConn;
-            mCmd.CommandText = "SELECT VisioOrdner from Konfig";
+            mCmd.CommandText = @"SELECT VisioOrdner from Konfig";
             SqlDataReader mReader = mCmd.ExecuteReader();
             mReader.Read();
             var s = mReader["VisioOrdner"].ToString();
             mReader.Close();
             return s;
+        }
+
+        private Boolean LadeProbePruefauftrag(string aPI, int aUlfd, ref Analyse aAnalyse)
+        {
+            SqlCommand mCmd = new SqlCommand();
+            mCmd.Connection = fConn;
+            mCmd.CommandText = @"select p.Art, d.Oberbegriff
+                                 from probe_pruefauftrag p
+                                 left join defana d on d.Nummer = p.Art
+                                 where p.PiNr = @PI
+                                 and p.Ulfd = @Ulfd";
+
+            mCmd.Parameters.AddWithValue("@PI", aPI);
+            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
+            SqlDataReader mReader = mCmd.ExecuteReader();
+            mReader.Read();
+            try
+            {
+                if (!mReader.HasRows)
+                    return false;
+                string s = mReader["Art"].ToString();
+                Int32.TryParse(s, out aAnalyse.Nummer);
+                aAnalyse.Name = mReader["Oberbegriff"].ToString();
+            }
+            finally
+            {
+                mReader.Close();
+            }
+            return true;
+        }
+
+        private Boolean LadePruef(string aPI, int aUlfd, ref Analyse aAnalyse)
+        {
+            SqlCommand mCmd = new SqlCommand();
+            mCmd.Connection = fConn;
+            mCmd.CommandText = @"select p.Analyseart, d.Oberbegriff
+                                 from pruef p
+                                 left join defana d on d.Nummer = p.Analyseart
+                                 where p.PiNr = @PI
+                                 and p.Ulfd = @Ulfd";
+
+            mCmd.Parameters.AddWithValue("@PI", aPI);
+            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
+            SqlDataReader mReader = mCmd.ExecuteReader();
+            mReader.Read();
+            try
+            {
+                if (!mReader.HasRows)
+                    return false;
+                string s = mReader["Art"].ToString();
+                Int32.TryParse(s, out aAnalyse.Nummer);
+                aAnalyse.Name = mReader["Oberbegriff"].ToString();
+            }
+            finally
+            {
+                mReader.Close();
+            }
+            return true;
+        }
+
+        private Boolean LadeAnalyseAusProbenAnalyse(string aPI, int aUlfd, ref Analyse aAnalyse)
+        {
+            SqlCommand mCmd = new SqlCommand();
+            mCmd.Connection = fConn;
+            mCmd.CommandText = @"select p.Art, d.Oberbegriff
+                                 from ProbenAnalyse_V p
+                                 left join defana d on d.Nummer = p.Art
+                                 where p.PI = @PI
+                                 and p.Ulfd = @Ulfd";
+
+            mCmd.Parameters.AddWithValue("@PI", aPI);
+            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
+            SqlDataReader mReader = mCmd.ExecuteReader();
+            mReader.Read();
+            try
+            {
+                if (!mReader.HasRows)
+                    return false;
+                string s = mReader["Art"].ToString();
+                Int32.TryParse(s, out aAnalyse.Nummer);
+                aAnalyse.Name = mReader["Oberbegriff"].ToString();
+            }
+            finally
+            {
+                mReader.Close();
+            }
+            return true;
+        }
+
+        private Boolean LadeAnalyseAusPerformanceInfo(string aPI, int aUlfd, ref Analyse aAnalyse)
+        {
+            SqlCommand mCmd = new SqlCommand();
+            mCmd.Connection = fConn;
+            mCmd.CommandText = @"select p.AnalyseNr, d.Oberbegriff
+                                 from PerformanceInfo_V p
+                                 left join defana d on d.Nummer = p.AnalyseNr
+                                 where p.PI = @PI
+                                 and p.UlfdNr = @Ulfd";
+
+            mCmd.Parameters.AddWithValue("@PI", aPI);
+            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
+            SqlDataReader mReader = mCmd.ExecuteReader();
+            mReader.Read();
+            try
+            {
+                if (!mReader.HasRows)
+                    return false;
+                string s = mReader["Art"].ToString();
+                Int32.TryParse(s, out aAnalyse.Nummer);
+                aAnalyse.Name = mReader["Oberbegriff"].ToString();
+            }
+            finally
+            {
+                mReader.Close();
+            }
+            return true;
         }
 
         Boolean FindFeldname(string aFeldName, string aSection)
@@ -251,11 +374,30 @@ namespace VISIO_Import
             return (int)mReturnParameter.Value;
         }
 
-        public void SaveProtokoll()
+        private void DoProtokoll(List<string> aProtokoll, string aPiStr, string aAnalyseName)
         {
-            List<string> mFileContent = new List<string>();
-            // Visio-Import_20102025      
-            File.AppendAllLines(fProtokollDateiname, fProtokoll);
+            DateTime mZeitPunkt = DateTime.Now;
+            aProtokoll.Add(mZeitPunkt.ToLongDateString() + " " + mZeitPunkt.ToLongTimeString());
+            aProtokoll.Add(String.Format("PI{0} Analyse {1}", aPiStr, aAnalyseName));
+        }
+
+        private void DoSuccess(string aPiStr, string aAnalyseName, string aDateiname)
+        {
+            DoProtokoll(fProtokoll, aPiStr, aAnalyseName);
+            fProtokoll.Add(String.Format("{0} importiert", aDateiname));
+            fProtokoll.Add("");
+        }
+
+        private void DoError(string aPiStr, string aAnalyseName, string aDateiname, string aFehlerMessage)
+        {
+            List<string> mTemp = new List<string>();
+            DoProtokoll(mTemp, aPiStr, aAnalyseName);
+            mTemp.Add("Fehler -> " + aFehlerMessage);
+            mTemp.Add(String.Format("{0} nicht importiert", aDateiname));
+            mTemp.Add("");
+
+            fProtokoll.AddRange(mTemp);
+            fFehler.AddRange(mTemp);
         }
 
         void DoImport()
@@ -288,6 +430,27 @@ namespace VISIO_Import
                     {
                         string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
                         string mPiStr = mNurDateiName.Substring(0, 10);
+                        s = mNurDateiName.Substring(10, 2);
+                        Int32.TryParse(s, out int mUlfd);
+                        Analyse mAnalyse = new Analyse();
+                        // Versuche die Analyse-Daten verschiedenen Tabellen zu laden
+                        if (!(   // Zunächst in der Tabelle ProbenAnalysen suchen
+                                 LadeAnalyseAusProbenAnalyse(mPiStr, mUlfd, ref mAnalyse) 
+                                 // Wenn nichts gefunden wurde, in der Tabelle PerformanceInfo suchen
+                              || LadeAnalyseAusPerformanceInfo(mPiStr, mUlfd, ref mAnalyse)
+                                 // Wenn nichts gefunden wurde, in der Tabelle Proben_Pruefauftrag suchen
+                              || LadeProbePruefauftrag(mPiStr, mUlfd, ref mAnalyse)
+                                 // Wenn nichts gefunden wurde, in der Tabelle Pruef suchen
+                              || LadePruef(mPiStr, mUlfd, ref mAnalyse)
+                           ))
+                        {
+                            DoError(mPiStr,
+                                     "?",// Analysename
+                                     mNurDateiName,
+                                     String.Format("Konnte Probenanalyse mit PI{0} und Lfd-Nr. {1} nicht finden!", mPiStr, mUlfd));
+                            continue;
+                        }
+
                         int mVisioImportID = 0;
                         using (var mReader = new StreamReader(fVisioDatenDatei))
                         {
@@ -315,6 +478,7 @@ namespace VISIO_Import
                             fTran = fConn.BeginTransaction();
                             try
                             {
+                                List<string> mUnbekannteFelder = new List<string>();
                                 mVisioImportID = IU_VisioImport(DateTime.Now,
                                                                 mNurDateiName,
                                                                 GetDictValue(cStudy_level_1),
@@ -328,26 +492,34 @@ namespace VISIO_Import
 
                                 for (int i = 0; i < mValues.Count(); i++)
                                 {
-                                    TFeldKategorie mKategorie_01;
+                                    TFeldKategorie mKategorie_01 = TFeldKategorie.Normal;
                                     int mAnzahl = 0;
-                                    if ((Int32.TryParse(mValues[i], out mAnzahl)) && (mAnzahl > 0) && (FeldZulassen(fSpaltenNamen[i], out mKategorie_01)))
-                                    {
-                                        IU_VisioImportPolle(mVisioImportID,
-                                                            fSpaltenNamen[i],
-                                                            mAnzahl,
-                                                            mKategorie_01);
-                                    }//if  
+                                    if (Int32.TryParse(mValues[i], out mAnzahl) && (mAnzahl > 0)) {
+                                        if (FeldZulassen(fSpaltenNamen[i], out mKategorie_01))
+                                            IU_VisioImportPolle(mVisioImportID,
+                                                                fSpaltenNamen[i],
+                                                                mAnzahl,
+                                                                mKategorie_01);
+                                        else if (mKategorie_01 == TFeldKategorie.Unbekannt)
+                                            mUnbekannteFelder.Add(String.Format("Unbekanntes Feld \"{0}\"", fSpaltenNamen[i]));
+                                    }
                                 }//for
+
+                                if (mUnbekannteFelder.Count > 0)
+                                    throw new Exception(mUnbekannteFelder.ToString());
+
                                 fTran.Commit();
-                                DateTime mZeitPunkt = DateTime.Now;
-                                fProtokoll.Add(mZeitPunkt.ToLongDateString() + " " + mZeitPunkt.ToLongTimeString());
-                                fProtokoll.Add(String.Format("PI{0}",mPiStr));
-                                fProtokoll.Add(String.Format("{0} importiert", mNurDateiName));
-                                fProtokoll.Add("");
+                                DoSuccess(mPiStr, 
+                                          mAnalyse.Name, 
+                                          mNurDateiName);
                             }
                             catch (Exception Ex)
                             {
                                 fTran.Rollback();
+                                DoError(mPiStr,
+                                        mAnalyse.Name,
+                                        mNurDateiName,
+                                        Ex.Message);
                             }
                         }
                     }
@@ -360,12 +532,12 @@ namespace VISIO_Import
                     string mProtokollDir = fVisioOrdner + "\\Protokoll\\";
                     string s = mProtokollDir + fProtokollDateiname + ".prot";
 
-                    if (!File.Exists(s))
-                        File.Create(s).Close();
+                    if (File.Exists(s))
+                        File.AppendAllLines(s, fProtokoll);
+                    else
+                        File.WriteAllLines(s, fProtokoll);
 
-                    File.AppendAllLines(s, fProtokoll);
-
-                    Dictionary<DateTime, string> mCreationDateList = Directory.EnumerateFiles(mProtokollDir, "*.prot", SearchOption.TopDirectoryOnly).ToDictionary(x => File.GetCreationTime(x), x => x);
+                    var mCreationDateList = Directory.EnumerateFiles(mProtokollDir, "*.prot", SearchOption.TopDirectoryOnly).ToDictionary(x => File.GetCreationTime(x), x => x);
 
                     if (mCreationDateList.Count > cMaxProtkollDateien)
                     {
