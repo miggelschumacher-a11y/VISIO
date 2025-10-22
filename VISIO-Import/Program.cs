@@ -564,6 +564,8 @@ namespace VISIO_Import
                                                 mVisioImportID);
 
                                 fTran.Commit();
+                                // Die importierten Dateien sollen gelöscht werden, aber an dieser Stelle ruft das Löschen eine Exception hervor!
+                                // Daher werden sie Dateien hier gesammelt, um sie später zu löschen.
                                 mImportedFiles.Add(fVisioDatenDatei);
                                 DoSuccess(mPiStr, 
                                           mAnalyse.Name, 
