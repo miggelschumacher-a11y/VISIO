@@ -378,7 +378,7 @@ namespace VISIO_Import
         {
             DateTime mZeitPunkt = DateTime.Now;
             aProtokoll.Add(mZeitPunkt.ToLongDateString() + " " + mZeitPunkt.ToLongTimeString());
-            aProtokoll.Add(String.Format("PI{0} Analyse {1}", aPiStr, aAnalyseName));
+            aProtokoll.Add(String.Format("PI: {0} --- Analyse: \"{1}\"", aPiStr, aAnalyseName));
         }
 
         private void DoSuccess(string aPiStr, string aAnalyseName, string aDateiname)
@@ -400,8 +400,53 @@ namespace VISIO_Import
             fFehler.AddRange(mTemp);
         }
 
+        private void DoPollenAuftrag(string aPI, int aPollenauftragPiID, int aAnalyseNr, string aBenutzer, int aVisioImportID)
+        {
+            SqlCommand mCmd = new SqlCommand();
+            mCmd.Connection = fConn;
+            mCmd.Transaction = fTran;
+            mCmd.CommandType = CommandType.StoredProcedure;
+            mCmd.CommandText = "DoVisioPolle";
+            mCmd.Parameters.AddWithValue("@PI", aPI);
+            mCmd.Parameters.AddWithValue("@VisioID", aVisioImportID);
+            mCmd.Parameters.AddWithValue("@PollenauftragPiID", aPollenauftragPiID);
+            mCmd.Parameters.AddWithValue("@AnalyseNr", aAnalyseNr);
+            mCmd.Parameters.AddWithValue("@Benutzer", aBenutzer);
+            mCmd.ExecuteNonQuery();
+        }
+
+        private int LadePollenAnalysePerPIundAnalyse(string aPI, int aAnalyseNr)
+        {
+            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
+            {
+                mConn.Open();
+                SqlCommand mCmd = new SqlCommand();
+                mCmd.Connection = mConn;
+                mCmd.CommandText = @"select top 5 * from PollenanalysePI
+                                     where PI = @PI
+                                     and AnalyseNr = @AnalyseNr";
+
+                mCmd.Parameters.AddWithValue("@PI", aPI);
+                mCmd.Parameters.AddWithValue("@AnalyseNr", aAnalyseNr);
+                SqlDataReader mReader = mCmd.ExecuteReader();
+                mReader.Read();
+                try
+                {
+                    if (!mReader.HasRows)
+                        return 0;
+                    Int32.TryParse(mReader["ID"].ToString(), out int mID);
+                    return mID;
+                }
+                finally
+                {
+                    mReader.Close();
+                }
+            }
+        }
+
         void DoImport()
         {
+            List<string> mImportedFiles = new List<string>(); 
             DateTime mHeute = DateTime.Today;
             fProtokollDateiname = "Visio-Import-" + mHeute.Day.ToString() + mHeute.Month.ToString() + mHeute.Year.ToString();
             ReadConfigFiles("SQLSRV", ref fConnectionStr);
@@ -423,6 +468,7 @@ namespace VISIO_Import
                             s = String.Format("Visio-Ordner ({0}) für Importdaten nicht gefunden!", fVisioOrdner);
 
                         fProtokoll.Add(s);
+                        fFehler.Add(s);
                         return;
                     }
 
@@ -444,6 +490,7 @@ namespace VISIO_Import
                               || LadePruef(mPiStr, mUlfd, ref mAnalyse)
                            ))
                         {
+                            // In keine der oben genannten Tabelle konnte ein Datensatz mit "mPiStr" und "mUlfd" gefunden werden 
                             DoError(mPiStr,
                                      "?",// Analysename
                                      mNurDateiName,
@@ -508,7 +555,16 @@ namespace VISIO_Import
                                 if (mUnbekannteFelder.Count > 0)
                                     throw new Exception(mUnbekannteFelder.ToString());
 
+                                int mPollenauftragPiID = LadePollenAnalysePerPIundAnalyse(mPiStr, mAnalyse.Nummer);
+
+                                DoPollenAuftrag(mPiStr,
+                                                mPollenauftragPiID,
+                                                mAnalyse.Nummer,
+                                                "Server",
+                                                mVisioImportID);
+
                                 fTran.Commit();
+                                mImportedFiles.Add(fVisioDatenDatei);
                                 DoSuccess(mPiStr, 
                                           mAnalyse.Name, 
                                           mNurDateiName);
@@ -522,6 +578,18 @@ namespace VISIO_Import
                                         Ex.Message);
                             }
                         }
+                    }
+                }
+                foreach (var mFile in mImportedFiles)
+                {
+                    try
+                    {
+                        File.Delete(mFile);
+                    }catch(Exception Ex)
+                    {
+                        var s = String.Format("Fehler {0} --- Datei: \"{1}\" konnte nach dem Import nicht gelöscht werden!",mFile, Ex.Message);
+                        fProtokoll.Add(s);
+                        fFehler.Add(s);
                     }
                 }
             }
