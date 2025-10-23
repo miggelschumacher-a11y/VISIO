@@ -402,6 +402,7 @@ namespace VISIO_Import
             List<string> mTemp = new List<string>();
             DoProtokoll(mTemp, aPiStr, aAnalyseName);
             mTemp.Add(String.Format("{0} importiert", aDateiname));
+            Console.ForegroundColor = ConsoleColor.Green;
             mTemp.ForEach(x => Console.WriteLine(x));
             fProtokoll.Add("");
             fProtokoll.AddRange(mTemp);
@@ -414,6 +415,7 @@ namespace VISIO_Import
             mTemp.Add("Fehler -> " + aFehlerMessage);
             mTemp.Add(String.Format("{0} nicht importiert", aDateiname));
             mTemp.Add("");
+            Console.ForegroundColor = ConsoleColor.Red;
             mTemp.ForEach(x => Console.WriteLine(x));
             fProtokoll.AddRange(mTemp);
             fFehler.AddRange(mTemp);
@@ -465,6 +467,7 @@ namespace VISIO_Import
 
         void DoImport()
         {
+            Console.Clear();
             List<string> mImportedFiles = new List<string>();
             DateTime mHeute = DateTime.Today;
             fProtokollDateiname = "Visio-Import-" + mHeute.Day.ToString() + mHeute.Month.ToString() + mHeute.Year.ToString();
@@ -621,6 +624,7 @@ namespace VISIO_Import
             }
             finally
             {
+                Console.ForegroundColor = ConsoleColor.Gray;
                 if (fProtokoll.Count() > 0)
                 {
                     string mProtokollDir = fVisioOrdner + "\\Protokoll\\";
@@ -696,7 +700,6 @@ namespace VISIO_Import
                     }
                 }
             }
-
             Console.Write("Programm wird beendet");
             WriteWarteInfo();
             fTimer.Elapsed += OnTimedEvent;
