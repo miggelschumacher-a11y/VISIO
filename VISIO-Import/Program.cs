@@ -7,9 +7,9 @@ using System.Data;
 using System.Data.SqlClient;
 using Nocksoft.IO.ConfigFiles;
 using MailKit.Net.Smtp;
-using MailKit;
 using MimeKit;
 using System.Text;
+using System.Timers;
 
 namespace VISIO_Import
 {
@@ -49,6 +49,16 @@ namespace VISIO_Import
     #endregion
     class Program
     {
+        const string cStudy_level_1 = "Study level 1";
+        const string cStudy_level_2 = "Study level 2";
+        const string cStudy_level_3 = "Study level 3";
+        const string cName = "Name";
+        const string cImage = "Image";
+        const string cLayerData = "LayerData";
+        const string cStarchPrz = "Starch %";
+        const int cMaxProtkollDateien = 30;
+        const int cMaxWarteZeit = 5000;
+
         INIFile fIniFile;
         string fProtokollDateiname = "";
         string fVisioOrdner;
@@ -59,15 +69,9 @@ namespace VISIO_Import
         readonly List<string> fSpaltenNamen = new List<string>();
         readonly List<string> fProtokoll = new List<string>();
         readonly List<string> fFehler = new List<string>();
-
-        const string cStudy_level_1 = "Study level 1";
-        const string cStudy_level_2 = "Study level 2";
-        const string cStudy_level_3 = "Study level 3";
-        const string cName = "Name";
-        const string cImage = "Image";
-        const string cLayerData = "LayerData";
-        const string cStarchPrz = "Starch %";
-        const int cMaxProtkollDateien = 30;
+        readonly Timer fTimer = new Timer(1000);
+        int fWartezeit = cMaxWarteZeit;
+        int fLastConsoleY = 0;
 
         enum TFeldKategorie {
             Normal,
@@ -396,9 +400,12 @@ namespace VISIO_Import
 
         private void DoSuccess(string aPiStr, string aAnalyseName, string aDateiname)
         {
-            DoProtokoll(fProtokoll, aPiStr, aAnalyseName);
-            fProtokoll.Add(String.Format("{0} importiert", aDateiname));
+            List<string> mTemp = new List<string>();
+            DoProtokoll(mTemp, aPiStr, aAnalyseName);
+            mTemp.Add(String.Format("{0} importiert", aDateiname));
+            mTemp.ForEach(x => Console.WriteLine(x));
             fProtokoll.Add("");
+            fProtokoll.AddRange(mTemp);
         }
 
         private void DoError(string aPiStr, string aAnalyseName, string aDateiname, string aFehlerMessage)
@@ -408,7 +415,7 @@ namespace VISIO_Import
             mTemp.Add("Fehler -> " + aFehlerMessage);
             mTemp.Add(String.Format("{0} nicht importiert", aDateiname));
             mTemp.Add("");
-
+            mTemp.ForEach(x => Console.WriteLine(x));
             fProtokoll.AddRange(mTemp);
             fFehler.AddRange(mTemp);
         }
@@ -683,12 +690,35 @@ namespace VISIO_Import
                         if (mIntPort  == 0)
                             mIntPort = 25;
 
+                        Console.WriteLine("Versende E-Mails");
                         client.Connect(mHost, mIntPort, false);
                         client.Send(message);
                         client.Disconnect(true);
                     }
                 }
             }
+
+            fLastConsoleY = Console.CursorTop;
+            WriteWarteInfo();
+            fTimer.Elapsed += OnTimedEvent;
+            fTimer.Enabled = true;
+            fWartezeit -= 1000;
+            do {} while (fTimer.Enabled);
+        }
+
+        private void WriteWarteInfo()
+        {
+            Console.SetCursorPosition(0, fLastConsoleY);
+            Console.Write(new String('.', (cMaxWarteZeit - fWartezeit) / 1000 + 1));
+        }
+
+        private void OnTimedEvent(Object source, ElapsedEventArgs e)
+        {
+            Console.SetCursorPosition(0, fLastConsoleY);
+            Console.Write(new String(' ', Console.BufferWidth));
+            WriteWarteInfo();
+            fWartezeit -= 1000;
+            fTimer.Enabled = (fWartezeit >= 0);
         }
 
         #region Config Files
