@@ -435,7 +435,7 @@ namespace VISIO_Import
                 mConn.Open();
                 SqlCommand mCmd = new SqlCommand();
                 mCmd.Connection = mConn;
-                mCmd.CommandText = @"select top 5 * from PollenanalysePI
+                mCmd.CommandText = @"select ID from PollenanalysePI
                                      where PI = @PI
                                      and AnalyseNr = @AnalyseNr";
 
@@ -647,20 +647,30 @@ namespace VISIO_Import
                     message.From.Add(new MailboxAddress("VISIO-Import-App", "Ladis@intertek.com"));
 
                     var mTestModus = ReadConfigFile("Test-Modus");
-                    if (mTestModus.Trim() ==  "1")
+                    if (mTestModus.Trim() == "1")
                         // Programm läuft laut INI-File im Test-Modus
                         message.To.Add(new MailboxAddress("VISIO-Fehler-Empfänger", "michael.schumacher@intertek.com"));
                     else
+                    {
                         // Programm läuft laut INI-File NICHT im Test-Modus
                         LadeEmailAdressen(mEmailAdressen);
+                        // Für jeden Eintrag in mEmailAdressen eine MailboxAddress erzeugen und an message.To anhängen
+                        mEmailAdressen.ForEach(x => message.To.Add(new MailboxAddress("VISIO-Fehler-Empfänger", x)));
+                    }
                     
                     message.Subject = "VISIO-Import-Fehler ";
+
+                    // Bodytext zusammenbauen
                     var mBuilder = new BodyBuilder();
                     StringBuilder mText = new StringBuilder();
+                    // Alle Fehlerzeilen in mText kopieren
                     fFehler.ForEach(x => mText.AppendLine(x));
                     var st = mText.ToString();
+                    // mText in mBuilder.TextBody kopieren
                     mBuilder.TextBody = mText.ToString();
+                    // Texte aus mBuilder message.Body kopieren
                     message.Body = mBuilder.ToMessageBody();
+
                     using (var client = new SmtpClient())
                     {
                         var mHost = ReadConfigFile("Host");
