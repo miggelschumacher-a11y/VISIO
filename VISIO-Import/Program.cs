@@ -658,7 +658,7 @@ namespace VISIO_Import
                         mEmailAdressen.ForEach(x => message.To.Add(new MailboxAddress("VISIO-Fehler-Empfänger", x)));
                     }
                     
-                    message.Subject = "VISIO-Import-Fehler ";
+                    message.Subject = "VISIO-Import-Fehler";
 
                     // Bodytext zusammenbauen
                     var mBuilder = new BodyBuilder();
