@@ -2,37 +2,33 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Xml.Serialization;
 using System.Data;
 using System.Data.SqlClient;
 using Nocksoft.IO.ConfigFiles;
-using System.Collections.Specialized;
+using MailKit.Net.Smtp;
+using MailKit;
+using MimeKit;
+using System.Text;
 
 namespace VISIO_Import
 {
-        #region XMLs
-        //
-        [Serializable]
-        public class DBConnection
-        {
-            [XmlAttribute("name")]
-            public string Name;
+    #region XMLs
+    //
+    [Serializable]
+    public class DBConnection
+    {
+        [XmlAttribute("name")]
+        public string Name;
+        public string DBName;
+        public string SourceOrTarget;
+        public string ProdServerIP;
+        public string ProdSourceString;
+        public string DevServerIP;
+        public string DevSourceString;
 
-            public string SourceOrTarget;
-
-            public string ServerIP;
-
-            public string DBName;
-
-            public string ProdSourceString;
-
-            public string DevSourceString;
-
-            public string Modus;
-        }
-        public class AppParameter
+    }
+    public class AppParameter
         {
             [XmlAttribute("Name")]
             public string Name;
@@ -111,7 +107,7 @@ namespace VISIO_Import
                 fSpalten[aKey] = s;
             }
         }
-               
+
         private string[] GetValues(StreamReader aReader)
         {
             // Die Daten sind mit TAB getrennt.
@@ -130,7 +126,7 @@ namespace VISIO_Import
             return s;
         }
 
-        private Boolean LadeProbePruefauftrag(string aPI, int aUlfd, ref Analyse aAnalyse)
+        private Boolean LadeProbePruefauftrag(string aPI, int aUlfd, Analyse aAnalyse)
         {
             SqlCommand mCmd = new SqlCommand();
             mCmd.Connection = fConn;
@@ -159,7 +155,7 @@ namespace VISIO_Import
             return true;
         }
 
-        private Boolean LadePruef(string aPI, int aUlfd, ref Analyse aAnalyse)
+        private Boolean LadePruef(string aPI, int aUlfd, Analyse aAnalyse)
         {
             SqlCommand mCmd = new SqlCommand();
             mCmd.Connection = fConn;
@@ -188,7 +184,7 @@ namespace VISIO_Import
             return true;
         }
 
-        private Boolean LadeAnalyseAusProbenAnalyse(string aPI, int aUlfd, ref Analyse aAnalyse)
+        private Boolean LadeAnalyseAusProbenAnalyse(string aPI, int aUlfd, Analyse aAnalyse)
         {
             SqlCommand mCmd = new SqlCommand();
             mCmd.Connection = fConn;
@@ -217,7 +213,24 @@ namespace VISIO_Import
             return true;
         }
 
-        private Boolean LadeAnalyseAusPerformanceInfo(string aPI, int aUlfd, ref Analyse aAnalyse)
+        private void LadeEmailAdressen(List<string> aEmailAdressen)
+        {
+            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
+            {
+                mConn.Open();
+                SqlCommand mCmd = new SqlCommand();
+                mCmd.Connection = mConn;
+                mCmd.CommandText = "select e.Email from kundeEmail e where EmailTyp = 'WIP' and aktiv = 1";
+                SqlDataReader mReader = mCmd.ExecuteReader();
+
+                while (mReader.Read())
+                {
+                    aEmailAdressen.Add(mReader["Email"].ToString());
+                }
+            }
+        }
+
+        private Boolean LadeAnalyseAusPerformanceInfo(string aPI, int aUlfd, Analyse aAnalyse)
         {
             SqlCommand mCmd = new SqlCommand();
             mCmd.Connection = fConn;
@@ -446,14 +459,14 @@ namespace VISIO_Import
 
         void DoImport()
         {
-            List<string> mImportedFiles = new List<string>(); 
+            List<string> mImportedFiles = new List<string>();
             DateTime mHeute = DateTime.Today;
             fProtokollDateiname = "Visio-Import-" + mHeute.Day.ToString() + mHeute.Month.ToString() + mHeute.Year.ToString();
-            ReadConfigFiles("SQLSRV", ref fConnectionStr);
             List<string> mDatenZeile = new List<string>();
             fIniFile = new INIFile(@".\VISIO.ini");
             try
             {
+                fConnectionStr = ReadConfigFile("SQLSRV");
                 using (fConn = new SqlConnection(fConnectionStr))
                 {
                     string s = "";
@@ -481,13 +494,13 @@ namespace VISIO_Import
                         Analyse mAnalyse = new Analyse();
                         // Versuche die Analyse-Daten verschiedenen Tabellen zu laden
                         if (!(   // Zunächst in der Tabelle ProbenAnalysen suchen
-                                 LadeAnalyseAusProbenAnalyse(mPiStr, mUlfd, ref mAnalyse) 
-                                 // Wenn nichts gefunden wurde, in der Tabelle PerformanceInfo suchen
-                              || LadeAnalyseAusPerformanceInfo(mPiStr, mUlfd, ref mAnalyse)
-                                 // Wenn nichts gefunden wurde, in der Tabelle Proben_Pruefauftrag suchen
-                              || LadeProbePruefauftrag(mPiStr, mUlfd, ref mAnalyse)
-                                 // Wenn nichts gefunden wurde, in der Tabelle Pruef suchen
-                              || LadePruef(mPiStr, mUlfd, ref mAnalyse)
+                                 LadeAnalyseAusProbenAnalyse(mPiStr, mUlfd, mAnalyse)
+                              // Wenn nichts gefunden wurde, in der Tabelle PerformanceInfo suchen
+                              || LadeAnalyseAusPerformanceInfo(mPiStr, mUlfd, mAnalyse)
+                              // Wenn nichts gefunden wurde, in der Tabelle Proben_Pruefauftrag suchen
+                              || LadeProbePruefauftrag(mPiStr, mUlfd, mAnalyse)
+                              // Wenn nichts gefunden wurde, in der Tabelle Pruef suchen
+                              || LadePruef(mPiStr, mUlfd, mAnalyse)
                            ))
                         {
                             // In keine der oben genannten Tabelle konnte ein Datensatz mit "mPiStr" und "mUlfd" gefunden werden 
@@ -541,7 +554,8 @@ namespace VISIO_Import
                                 {
                                     TFeldKategorie mKategorie_01 = TFeldKategorie.Normal;
                                     int mAnzahl = 0;
-                                    if (Int32.TryParse(mValues[i], out mAnzahl) && (mAnzahl > 0)) {
+                                    if (Int32.TryParse(mValues[i], out mAnzahl) && (mAnzahl > 0))
+                                    {
                                         if (FeldZulassen(fSpaltenNamen[i], out mKategorie_01))
                                             IU_VisioImportPolle(mVisioImportID,
                                                                 fSpaltenNamen[i],
@@ -555,20 +569,22 @@ namespace VISIO_Import
                                 if (mUnbekannteFelder.Count > 0)
                                     throw new Exception(mUnbekannteFelder.ToString());
 
+                                // MasterID für den Pollenauftrag laden
                                 int mPollenauftragPiID = LadePollenAnalysePerPIundAnalyse(mPiStr, mAnalyse.Nummer);
-
+                                // Pollenauftrag erzeugen
                                 DoPollenAuftrag(mPiStr,
                                                 mPollenauftragPiID,
                                                 mAnalyse.Nummer,
                                                 "Server",
                                                 mVisioImportID);
 
+
                                 fTran.Commit();
                                 // Die importierten Dateien sollen gelöscht werden, aber an dieser Stelle ruft das Löschen eine Exception hervor!
                                 // Daher werden sie Dateien hier gesammelt, um sie später zu löschen.
                                 mImportedFiles.Add(fVisioDatenDatei);
-                                DoSuccess(mPiStr, 
-                                          mAnalyse.Name, 
+                                DoSuccess(mPiStr,
+                                          mAnalyse.Name,
                                           mNurDateiName);
                             }
                             catch (Exception Ex)
@@ -588,9 +604,10 @@ namespace VISIO_Import
                     try
                     {
                         File.Delete(mFile);
-                    }catch(Exception Ex)
+                    }
+                    catch (Exception Ex)
                     {
-                        var s = String.Format("Fehler {0} --- Datei: \"{1}\" konnte nach dem Import nicht gelöscht werden!",mFile, Ex.Message);
+                        var s = String.Format("Fehler {0} --- Datei: \"{1}\" konnte nach dem Import nicht gelöscht werden!", mFile, Ex.Message);
                         fProtokoll.Add(s);
                         fFehler.Add(s);
                     }
@@ -622,67 +639,76 @@ namespace VISIO_Import
                         }
                     }
                 }
+
+                if (fFehler.Count > 0)
+                {
+                    List<string> mEmailAdressen = new List<string>();
+                    var message = new MimeMessage();
+                    message.From.Add(new MailboxAddress("VISIO-Import-App", "Ladis@intertek.com"));
+
+                    var mTestModus = ReadConfigFile("Test-Modus");
+                    if (mTestModus.Trim() ==  "1")
+                        // Programm läuft laut INI-File im Test-Modus
+                        message.To.Add(new MailboxAddress("VISIO-Fehler-Empfänger", "michael.schumacher@intertek.com"));
+                    else
+                        // Programm läuft laut INI-File NICHT im Test-Modus
+                        LadeEmailAdressen(mEmailAdressen);
+                    
+                    message.Subject = "VISIO-Import-Fehler ";
+                    var mBuilder = new BodyBuilder();
+                    StringBuilder mText = new StringBuilder();
+                    fFehler.ForEach(x => mText.AppendLine(x));
+                    var st = mText.ToString();
+                    mBuilder.TextBody = mText.ToString();
+                    message.Body = mBuilder.ToMessageBody();
+                    using (var client = new SmtpClient())
+                    {
+                        var mHost = ReadConfigFile("Host");
+                        if (mHost == "")
+                            mHost = "10.135.26.8";
+
+                        var mPort = ReadConfigFile("Port");
+                        Int32.TryParse(mPort, out int mIntPort);
+
+                        if (mIntPort  == 0)
+                            mIntPort = 25;
+
+                        client.Connect(mHost, mIntPort, false);
+                        client.Send(message);
+                        client.Disconnect(true);
+                    }
+                }
             }
         }
 
         #region Config Files
-        private void ReadConfigFiles(string aSuch, ref string aResult)
+        private string ReadConfigFile(string aSuchPara)
         {
-            try
+            var mSerializer = new XmlSerializer(typeof(ConfigContainer));
+            using (var mStream = new FileStream(@".\VISIO_Config.xml", FileMode.Open))
             {
-                aResult = "";
-                var mSerializer = new XmlSerializer(typeof(ConfigContainer));
-                using (var mStream = new FileStream(@".\VISIO_Config.xml", FileMode.Open))
+                var mContainer = mSerializer.Deserialize(mStream) as ConfigContainer;
+                mStream.Close();
+
+                List<DBConnection> dbcSrc = mContainer.DBConnections.FindAll(x => x.Name.Equals(aSuchPara));
+                if (dbcSrc.Count > 0)
                 {
-                    var mContainer = mSerializer.Deserialize(mStream) as ConfigContainer;
-                    mStream.Close();
-                    //
-                    List<DBConnection> dbcSrc = mContainer.DBConnections.FindAll(x => x.Name.Equals(aSuch));
-                    //
-                    if (dbcSrc.Count > 0)
-                    {
-                        if (dbcSrc[0].Modus == "Entwicklung")
-                            aResult = dbcSrc[0].DevSourceString.Trim();
-                        else
-                            aResult = dbcSrc[0].ProdSourceString.Trim();
-                    }
+                    AppParameter mAppParameter = mContainer.AppParameters.Find(x => x.Name.Equals("Test-Modus"));
+                    Boolean mTestModus = (mAppParameter.Value == "1");
+                    if (mTestModus)
+                        return dbcSrc[0].DevSourceString.Trim();
                     else
-                    {
-                        AppParameter mAppParameter = mContainer.AppParameters.Find(x => x.Name.Equals(aSuch));
-                        if (mAppParameter != null)
-                            aResult = mAppParameter.Value;
-
-                    }
+                        return dbcSrc[0].ProdSourceString.Trim();
                 }
-            }
-            catch (Exception ex)
-            {
-                aResult = @"Data Source=EDEUBREAPP003\SQLBRE03;Initial Catalog=ladisInSQL;User ID=Ladis;Password=Winter2015!";
-            }
-        }
-        private string ReadConfigValue(string pName)
-        {
-            string retval = "";
-            try
-            {
-                var serializer = new XmlSerializer(typeof(ConfigContainer));
-
-                var stream = new FileStream(@".\VISIO_Config.xml", FileMode.Open);
-                var container = serializer.Deserialize(stream) as ConfigContainer;
-                stream.Close();
-                //
-                List<AppParameter> appParam = container.AppParameters.FindAll(x => x.Name.Equals(pName));
-                //
-                if (appParam.Count > 0)
+                else
                 {
-                    retval = appParam[0].Value.Trim();
+                    AppParameter mAppParameter = mContainer.AppParameters.Find(x => x.Name.Equals(aSuchPara));
+                    if (mAppParameter != null)
+                        return mAppParameter.Value;
+
                 }
+                return "";
             }
-            catch (Exception ex)
-            {
-                retval = "";
-            }
-            return retval;
         }
         #endregion
         static void Main(string[] args)
