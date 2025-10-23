@@ -57,7 +57,7 @@ namespace VISIO_Import
         const string cLayerData = "LayerData";
         const string cStarchPrz = "Starch %";
         const int cMaxProtkollDateien = 30;
-        const int cMaxWarteZeit = 5000;
+        const int cMaxWarteZeit = 3000;
 
         INIFile fIniFile;
         string fProtokollDateiname = "";
@@ -71,7 +71,6 @@ namespace VISIO_Import
         readonly List<string> fFehler = new List<string>();
         readonly Timer fTimer = new Timer(1000);
         int fWartezeit = cMaxWarteZeit;
-        int fLastConsoleY = 0;
 
         enum TFeldKategorie {
             Normal,
@@ -698,7 +697,7 @@ namespace VISIO_Import
                 }
             }
 
-            fLastConsoleY = Console.CursorTop;
+            Console.Write("Programm wird beendet");
             WriteWarteInfo();
             fTimer.Elapsed += OnTimedEvent;
             fTimer.Enabled = true;
@@ -708,14 +707,11 @@ namespace VISIO_Import
 
         private void WriteWarteInfo()
         {
-            Console.SetCursorPosition(0, fLastConsoleY);
-            Console.Write(new String('.', (cMaxWarteZeit - fWartezeit) / 1000 + 1));
+            Console.Write(".");
         }
 
         private void OnTimedEvent(Object source, ElapsedEventArgs e)
-        {
-            Console.SetCursorPosition(0, fLastConsoleY);
-            Console.Write(new String(' ', Console.BufferWidth));
+        { 
             WriteWarteInfo();
             fWartezeit -= 1000;
             fTimer.Enabled = (fWartezeit >= 0);
