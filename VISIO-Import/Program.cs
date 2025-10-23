@@ -220,7 +220,7 @@ namespace VISIO_Import
                 mConn.Open();
                 SqlCommand mCmd = new SqlCommand();
                 mCmd.Connection = mConn;
-                mCmd.CommandText = "select e.Email from kundeEmail e where EmailTyp = 'WIP' and aktiv = 1";
+                mCmd.CommandText = "select e.Email from kundeEmail e where EmailTyp = 'Visio-Import' and aktiv = 1";
                 SqlDataReader mReader = mCmd.ExecuteReader();
 
                 while (mReader.Read())
