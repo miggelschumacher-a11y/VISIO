@@ -131,7 +131,7 @@ namespace VISIO_Import
             return s;
         }
         
-        private Boolean FuelleAnalasyAusDB(string aPI, int aUlfd, Analyse aAnalyse)
+        private Boolean FuelleAnalyseAusDB(string aPI, int aUlfd, Analyse aAnalyse)
         {
             using (SqlConnection mConn = new SqlConnection(fConnectionStr))
             {
@@ -444,7 +444,7 @@ namespace VISIO_Import
                         Int32.TryParse(s, out int mUlfd);
                         Analyse mAnalyse = new Analyse();
                         // Versuche die Analyse-Daten verschiedenen Tabellen zu laden
-                        if (!(FuelleAnalasyAusDB(mPiStr, mUlfd, mAnalyse)))
+                        if (!(FuelleAnalyseAusDB(mPiStr, mUlfd, mAnalyse)))
                         {
                             // In keine der oben genannten Tabelle konnte ein Datensatz mit "mPiStr" und "mUlfd" gefunden werden 
                             DoError(mPiStr,
