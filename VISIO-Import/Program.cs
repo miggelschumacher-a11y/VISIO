@@ -130,92 +130,53 @@ namespace VISIO_Import
             mReader.Close();
             return s;
         }
-
-        private Boolean LadeProbePruefauftrag(string aPI, int aUlfd, Analyse aAnalyse)
+        
+        private Boolean FuelleAnalasyAusDB(string aPI, int aUlfd, Analyse aAnalyse)
         {
-            SqlCommand mCmd = new SqlCommand();
-            mCmd.Connection = fConn;
-            mCmd.CommandText = @"select p.Art, d.Oberbegriff
-                                 from probe_pruefauftrag p
-                                 left join defana d on d.Nummer = p.Art
-                                 where p.PiNr = @PI
-                                 and p.Ulfd = @Ulfd";
+            using (SqlConnection mConn = new SqlConnection(fConnectionStr))
+            {
+                mConn.Open();
+                SqlCommand mCmd = new SqlCommand();
+                mCmd.Connection = mConn;
+                mCmd.CommandText = @"select top 1 p.Art, d.Oberbegriff from
+                                    (
+                                    select p.Art from ProbenAnalyse_V p
+                                                      where p.PI = @PI
+                                                      and p.Ulfd = @Ulfd
+                                    union 
+                                    select p.AnalyseNr from PerformanceInfo_V p
+                                                       where p.PI = @PI
+				                                       and p.UlfdNr = @Ulfd
+                                    union
+                                    select p.Art
+                                                      from probe_pruefauftrag p
+                                                      where p.PiNr = @PI
+                                                      and p.P_ULfd = @Ulfd
+                                    union
+                                    select p.Analyseart from pruef p
+                                                        where p.PiNr = @PI
+                                                        and p.Ulfd = @Ulfd
+                                    ) p
+                                    left join defana d on d.Nummer = p.Art;";
 
-            mCmd.Parameters.AddWithValue("@PI", aPI);
-            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
-            SqlDataReader mReader = mCmd.ExecuteReader();
-            mReader.Read();
-            try
-            {
-                if (!mReader.HasRows)
-                    return false;
-                string s = mReader["Art"].ToString();
-                Int32.TryParse(s, out aAnalyse.Nummer);
-                aAnalyse.Name = mReader["Oberbegriff"].ToString();
+                mCmd.Parameters.AddWithValue("@PI", aPI);
+                mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
+                SqlDataReader mReader = mCmd.ExecuteReader();
+                mReader.Read();
+                try
+                {
+                    if (!mReader.HasRows)
+                        return false;
+                    string s = mReader["Art"].ToString();
+                    Int32.TryParse(s, out aAnalyse.Nummer);
+                    aAnalyse.Name = mReader["Oberbegriff"].ToString();
+                }
+                finally
+                {
+                    mReader.Close();
+                }
+                return true;
             }
-            finally
-            {
-                mReader.Close();
-            }
-            return true;
-        }
-
-        private Boolean LadePruef(string aPI, int aUlfd, Analyse aAnalyse)
-        {
-            SqlCommand mCmd = new SqlCommand();
-            mCmd.Connection = fConn;
-            mCmd.CommandText = @"select p.Analyseart, d.Oberbegriff
-                                 from pruef p
-                                 left join defana d on d.Nummer = p.Analyseart
-                                 where p.PiNr = @PI
-                                 and p.Ulfd = @Ulfd";
-
-            mCmd.Parameters.AddWithValue("@PI", aPI);
-            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
-            SqlDataReader mReader = mCmd.ExecuteReader();
-            mReader.Read();
-            try
-            {
-                if (!mReader.HasRows)
-                    return false;
-                string s = mReader["Art"].ToString();
-                Int32.TryParse(s, out aAnalyse.Nummer);
-                aAnalyse.Name = mReader["Oberbegriff"].ToString();
-            }
-            finally
-            {
-                mReader.Close();
-            }
-            return true;
-        }
-
-        private Boolean LadeAnalyseAusProbenAnalyse(string aPI, int aUlfd, Analyse aAnalyse)
-        {
-            SqlCommand mCmd = new SqlCommand();
-            mCmd.Connection = fConn;
-            mCmd.CommandText = @"select p.Art, d.Oberbegriff
-                                 from ProbenAnalyse_V p
-                                 left join defana d on d.Nummer = p.Art
-                                 where p.PI = @PI
-                                 and p.Ulfd = @Ulfd";
-
-            mCmd.Parameters.AddWithValue("@PI", aPI);
-            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
-            SqlDataReader mReader = mCmd.ExecuteReader();
-            mReader.Read();
-            try
-            {
-                if (!mReader.HasRows)
-                    return false;
-                string s = mReader["Art"].ToString();
-                Int32.TryParse(s, out aAnalyse.Nummer);
-                aAnalyse.Name = mReader["Oberbegriff"].ToString();
-            }
-            finally
-            {
-                mReader.Close();
-            }
-            return true;
         }
 
         private void LadeEmailAdressen(List<string> aEmailAdressen)
@@ -233,35 +194,6 @@ namespace VISIO_Import
                     aEmailAdressen.Add(mReader["Email"].ToString());
                 }
             }
-        }
-
-        private Boolean LadeAnalyseAusPerformanceInfo(string aPI, int aUlfd, Analyse aAnalyse)
-        {
-            SqlCommand mCmd = new SqlCommand();
-            mCmd.Connection = fConn;
-            mCmd.CommandText = @"select p.AnalyseNr, d.Oberbegriff
-                                 from PerformanceInfo_V p
-                                 left join defana d on d.Nummer = p.AnalyseNr
-                                 where p.PI = @PI
-                                 and p.UlfdNr = @Ulfd";
-
-            mCmd.Parameters.AddWithValue("@PI", aPI);
-            mCmd.Parameters.AddWithValue("@Ulfd", aUlfd);
-            SqlDataReader mReader = mCmd.ExecuteReader();
-            mReader.Read();
-            try
-            {
-                if (!mReader.HasRows)
-                    return false;
-                string s = mReader["Art"].ToString();
-                Int32.TryParse(s, out aAnalyse.Nummer);
-                aAnalyse.Name = mReader["Oberbegriff"].ToString();
-            }
-            finally
-            {
-                mReader.Close();
-            }
-            return true;
         }
 
         Boolean FindFeldname(string aFeldName, string aSection)
@@ -512,15 +444,7 @@ namespace VISIO_Import
                         Int32.TryParse(s, out int mUlfd);
                         Analyse mAnalyse = new Analyse();
                         // Versuche die Analyse-Daten verschiedenen Tabellen zu laden
-                        if (!(   // Zunächst in der Tabelle ProbenAnalysen suchen
-                                 LadeAnalyseAusProbenAnalyse(mPiStr, mUlfd, mAnalyse)
-                              // Wenn nichts gefunden wurde, in der Tabelle PerformanceInfo suchen
-                              || LadeAnalyseAusPerformanceInfo(mPiStr, mUlfd, mAnalyse)
-                              // Wenn nichts gefunden wurde, in der Tabelle Proben_Pruefauftrag suchen
-                              || LadeProbePruefauftrag(mPiStr, mUlfd, mAnalyse)
-                              // Wenn nichts gefunden wurde, in der Tabelle Pruef suchen
-                              || LadePruef(mPiStr, mUlfd, mAnalyse)
-                           ))
+                        if (!(FuelleAnalasyAusDB(mPiStr, mUlfd, mAnalyse)))
                         {
                             // In keine der oben genannten Tabelle konnte ein Datensatz mit "mPiStr" und "mUlfd" gefunden werden 
                             DoError(mPiStr,
