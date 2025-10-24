@@ -712,7 +712,7 @@ namespace VISIO_Import
             }
 
             if (fDateiListe.Count == 0)
-                Console.WriteLine("Keine Dateien für den VISIO-Import gefunden.");
+                Console.WriteLine("Keine Dateien für den VISIO-Import gefunden!");
 
             Console.Write("Beende VISIO-Import");
             WriteWarteInfo();
