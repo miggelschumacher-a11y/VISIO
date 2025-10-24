@@ -58,6 +58,7 @@ namespace VISIO_Import
         const string cStarchPrz = "Starch %";
         const int cMaxProtkollDateien = 30;
         const int cMaxWarteZeit = 3000;
+        const int cTimerIntervall = 1000;
 
         INIFile fIniFile;
         string fProtokollDateiname = "";
@@ -69,7 +70,8 @@ namespace VISIO_Import
         readonly List<string> fSpaltenNamen = new List<string>();
         readonly List<string> fProtokoll = new List<string>();
         readonly List<string> fFehler = new List<string>();
-        readonly Timer fTimer = new Timer(1000);
+        List<string> fDateiListe;
+        readonly Timer fTimer = new Timer(cTimerIntervall);
         int fWartezeit = cMaxWarteZeit;
 
         enum TFeldKategorie {
@@ -419,6 +421,12 @@ namespace VISIO_Import
             mTemp.ForEach(x => Console.WriteLine(x));
             fProtokoll.AddRange(mTemp);
             fFehler.AddRange(mTemp);
+
+            if (File.Exists(fVisioOrdner + "\\Fehler\\" + aDateiname))
+                File.Delete(fVisioOrdner + "\\Fehler\\" + aDateiname);
+
+            File.Move(fVisioOrdner + "\\" + aDateiname,
+                      fVisioOrdner + "\\Fehler\\" + aDateiname);
         }
 
         private void DoPollenAuftrag(string aPI, int aPollenauftragPiID, int aAnalyseNr, string aBenutzer, int aVisioImportID)
@@ -468,6 +476,7 @@ namespace VISIO_Import
         void DoImport()
         {
             Console.Clear();
+            Console.WriteLine("Starte VISIO-Import");
             List<string> mImportedFiles = new List<string>();
             DateTime mHeute = DateTime.Today;
             fProtokollDateiname = "Visio-Import-" + mHeute.Day.ToString() + mHeute.Month.ToString() + mHeute.Year.ToString();
@@ -494,7 +503,8 @@ namespace VISIO_Import
                         return;
                     }
 
-                    foreach (string fVisioDatenDatei in Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly))
+                    fDateiListe = Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly).ToList<string>();
+                    foreach (string fVisioDatenDatei in fDateiListe)
                     {
                         string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
                         string mPiStr = mNurDateiName.Substring(0, 10);
@@ -667,7 +677,7 @@ namespace VISIO_Import
                         // Für jeden Eintrag in mEmailAdressen eine MailboxAddress erzeugen und an message.To anhängen
                         mEmailAdressen.ForEach(x => message.To.Add(new MailboxAddress("VISIO-Fehler-Empfänger", x)));
                     }
-                    
+
                     message.Subject = "VISIO-Import-Fehler";
 
                     // Bodytext zusammenbauen
@@ -690,7 +700,7 @@ namespace VISIO_Import
                         var mPort = ReadConfigFile("Port");
                         Int32.TryParse(mPort, out int mIntPort);
 
-                        if (mIntPort  == 0)
+                        if (mIntPort == 0)
                             mIntPort = 25;
 
                         Console.WriteLine("Versende E-Mails");
@@ -700,12 +710,16 @@ namespace VISIO_Import
                     }
                 }
             }
-            Console.Write("Programm wird beendet");
+
+            if (fDateiListe.Count == 0)
+                Console.WriteLine("Keine Dateien für den VISIO-Import gefunden.");
+
+            Console.Write("Beende VISIO-Import");
             WriteWarteInfo();
             fTimer.Elapsed += OnTimedEvent;
             fTimer.Enabled = true;
-            fWartezeit -= 1000;
-            do {} while (fTimer.Enabled);
+            fWartezeit -= cTimerIntervall;
+            do { } while (fTimer.Enabled);
         }
 
         private void WriteWarteInfo()
@@ -716,7 +730,7 @@ namespace VISIO_Import
         private void OnTimedEvent(Object source, ElapsedEventArgs e)
         { 
             WriteWarteInfo();
-            fWartezeit -= 1000;
+            fWartezeit -= cTimerIntervall;
             fTimer.Enabled = (fWartezeit >= 0);
         }
 
