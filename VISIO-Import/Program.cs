@@ -411,7 +411,7 @@ namespace VISIO_Import
             Console.WriteLine("Starte VISIO-Import");
             List<string> mImportedFiles = new List<string>();
             DateTime mHeute = DateTime.Today;
-            fProtokollDateiname = "Visio-Import-" + mHeute.Day.ToString() + mHeute.Month.ToString() + mHeute.Year.ToString();
+            fProtokollDateiname = "Visio-Import-"+mHeute.Day.ToString("D2")+ "-" + mHeute.Month.ToString("D2") + "-" + mHeute.Year.ToString();
             List<string> mDatenZeile = new List<string>();
             fIniFile = new INIFile(@".\VISIO.ini");
             try
