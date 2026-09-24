@@ -533,6 +533,7 @@ namespace VISIO_Import
                             catch (Exception Ex)
                             {
                                 fTran.Rollback();
+                                mReader.Close();
                                 DoError(mPiStr,
                                         mAnalyse.Name,
                                         mNurDateiName,
