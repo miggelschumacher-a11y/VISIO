@@ -435,7 +435,17 @@ namespace VISIO_Import
                         return;
                     }
 
-                    fDateiListe = Directory.EnumerateFiles(fVisioOrdner, "*.tsv", SearchOption.TopDirectoryOnly).ToList<string>();
+                    // Alle Dateien, die mit "audit.trail" enden
+                    string[] auditFiles = Directory.GetFiles(fVisioOrdner, "*audit.trail");
+                    foreach (var file in auditFiles)
+                        File.Delete(file);
+
+                    // Alle Dateien, die mit "Objects.tsv" enden
+                    string[] objectsFiles = Directory.GetFiles(fVisioOrdner, "*objects.tsv");
+                    foreach (var file in objectsFiles)
+                        File.Delete(file);
+
+                    fDateiListe = Directory.EnumerateFiles(fVisioOrdner, "*_image.tsv", SearchOption.TopDirectoryOnly).ToList<string>();
                     foreach (string fVisioDatenDatei in fDateiListe)
                     {
                         string mNurDateiName = Path.GetFileName(fVisioDatenDatei);
